@@ -61,10 +61,11 @@ def home():
         return redirect('/login')
 
     mac = session.get('esp_mac')  # or whatever you store when selecting a device
+    location = session.get('location', 'Halifax')
 
     if not mac:
         flash("No device selected.", "warning")
-        return render_template("home.html", data=None)
+        return render_template("home.html", data={"temp": "No device", "hum": "No device", "water": "No device", "soil": "No device"}, location=location)
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -84,15 +85,15 @@ def home():
             'soil': row['soil']
         }
     else:
-        data = {"temp": "?", "hum": "?", "water": "?", "soil": "?"}
+        data = {"temp": "No data", "hum": "No data", "water": "No data", "soil": "No data"}
 
-    return render_template("home.html", data=data)
+    return render_template("home.html", data=data, location=location)
 
 @app.route("/trends")
 def trends():
     url = "https://api.thingspeak.com/channels/2996236/feeds.json"
     params = {
-        "api_key": "UTVLHX407QEQ2HYN",
+        "api_key": "UTVLHX407QEQ2HYN", #Thingspeak KEY(Testing/No need to hide)
         "results": 8000
     }
 
@@ -246,9 +247,7 @@ def remove_device():
 
     conn = get_db()
     cursor = conn.cursor()
-   # print("MAC to remove:", mac_to_remove)
     cursor.execute("SELECT * FROM devices")
-   # print(cursor.fetchall())
     cursor.execute("DELETE FROM devices WHERE user_id = ? AND mac = ?", (user_id, mac_to_remove))
     conn.commit()
 
@@ -287,7 +286,7 @@ def set_ip():
 @app.route('/toggleHeater')
 def toggleHeater():
     try:
-        esp_ip = session.get('esp_ip') # or 'http://192.168.2.236'
+        esp_ip = session.get('esp_ip')
         res = requests.get(f"{esp_ip}/toggleHeater", timeout=5)
         return res.text
     except:
@@ -296,7 +295,7 @@ def toggleHeater():
 @app.route('/toggleFan')
 def toggleFan():
     try:
-        esp_ip = session.get('esp_ip') # or 'http://192.168.2.236'
+        esp_ip = session.get('esp_ip')
         res = requests.get(f"{esp_ip}/toggleFan", timeout=5)
         return res.text  # return "ON" or "OFF"
     except:
@@ -306,7 +305,7 @@ def toggleFan():
 @app.route('/toggleSoil')
 def toggleSoil():
     try:
-        esp_ip = session.get('esp_ip') # or 'http://192.168.2.236'
+        esp_ip = session.get('esp_ip')
         res = requests.get(f"{esp_ip}/toggleSoil", timeout=5)
         return res.text
     except:
@@ -340,7 +339,7 @@ def set_constraints():
     temp_min = request.form['tempMin']
     temp_max = request.form['tempMax']
     try:
-        esp_ip = session.get('esp_ip') # or 'http://192.168.2.236'
+        esp_ip = session.get('esp_ip')
         requests.get(f"{esp_ip}/set-constraints?min={temp_min}&max={temp_max}", timeout=5)
     except:
         pass
