@@ -33,6 +33,17 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sensor_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mac TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                temperature REAL,
+                humidity REAL,
+                water_level REAL,
+                soil REAL
+            );
+        ''')
         conn.commit()
 
 def get_db():
@@ -46,22 +57,36 @@ def get_db():
 @app.route('/')
 def home():
     if 'user_id' not in session:
-        flash("Please log in to continue.", "warning")
+        flash("Please log in", "warning")
         return redirect('/login')
-    esp_ip = session.get('esp_ip')
-    location = session.get('location', 'Halifax')
 
-    if not esp_ip:
-        flash("No device selected. Please register and select a device.", "warning")
-        return render_template("home.html", data=None, location=location)
+    mac = session.get('esp_mac')  # or whatever you store when selecting a device
 
-    try:
-        res = requests.get(f"{esp_ip}/data", timeout=5)
-        data = res.json()
-    except:
-        data = {"temp": "-", "hum": "-", "water": "-", "soil": "-"}
+    if not mac:
+        flash("No device selected.", "warning")
+        return render_template("home.html", data=None)
 
-    return render_template("home.html", data=data, location=location)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM sensor_data
+            WHERE mac = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (mac,))
+        row = cursor.fetchone()
+
+    if row:
+        data = {
+            'temp': row['temperature'],
+            'hum': row['humidity'],
+            'water': row['water_level'],
+            'soil': row['soil']
+        }
+    else:
+        data = {"temp": "?", "hum": "?", "water": "?", "soil": "?"}
+
+    return render_template("home.html", data=data)
 
 @app.route("/trends")
 def trends():
@@ -205,37 +230,6 @@ def profile():
 
 ############################################################################ Device Registration
 
-@app.route('/register-device', methods=['POST'])
-def register_device():
-    data = request.get_json()
-    mac = data.get('mac')
-    ip = data.get('ip')
-    user_id = session.get('user_id')  # optional for now
-   # print(f"[DEBUG] /register-device sees mac: {mac}")
-   # print(f"[DEBUG] /register-device sees User IP: {request.remote_addr}")
-
-    if not mac or not ip:
-        return jsonify({'error': 'Missing MAC or IP'}), 400
-
-    with sqlite3.connect('users.db') as conn:
-        cursor = conn.cursor()
-
-        # Save device if new
-        cursor.execute("""
-            INSERT OR IGNORE INTO devices (user_id, mac, nickname, ip)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, mac, 'ESP Device', ip))
-
-        # Update IP each time
-        cursor.execute("""
-            UPDATE devices SET ip = ? WHERE mac = ?
-        """, (ip, mac))
-
-        conn.commit()
-
-    return jsonify({'status': 'registered'})
-
-
 @app.route('/select-device', methods=['POST'])
 def select_device():
     session['esp_ip'] = request.form.get('device_ip')
@@ -318,22 +312,28 @@ def toggleSoil():
     except:
         return "ERROR", 503
 
-@app.route("/data")
-def get_data():
-    esp_ip = session.get('esp_ip') # or 'http://192.168.2.236'
-    if not esp_ip:
-       # print(f"[DEBUG] Using ESP IP: {esp_ip}")
-        return jsonify({"error": "ESP not registered"}),400
-    try:
-        res = requests.get(f"{esp_ip}/data", timeout=5)
-        res.raise_for_status()
-        data = res.json()
-    except Exception as e:
-       # print(f"ESP32 /data failed: {e}")
-       # print(f"[DEBUG] Using ESP IP: {esp_ip}")
-        data = {"temp": "?", "hum": "?", "water": "?", "soil": "?"}
-        return jsonify(data), 503
-    return jsonify(data)
+@app.route('/submit-data', methods=['POST'])
+def submit_data():
+    data = request.get_json()
+    mac = data.get('mac')
+    temp = data.get('temp')
+    hum = data.get('hum')
+    water = data.get('water')
+    soil = data.get('soil')
+
+    if not mac:
+        return jsonify({'error': 'MAC address required'}), 400
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sensor_data (mac, temperature, humidity, water_level, soil)
+            VALUES (?, ?, ?, ?, ?)
+        """, (mac, temp, hum, water, soil))
+        conn.commit()
+
+    return jsonify({'status': 'Data stored'})
+
 
 @app.route('/set-constraints', methods=['POST'])
 def set_constraints():
