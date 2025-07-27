@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+
+<div class="container-fluid">
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card p-3">
+        <form method="post" action="/set-location">
+          <label for="location">Enter Location (City or Zip):</label>
+          <input type="text" name="location" class="form-control mb-2" placeholder="e.g., Halifax or B3H">
+          <button type="submit" class="btn btn-secondary">Set Location</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-md-6 text-end">
+      <div class="card p-3">
+        {% if session.username %}
+          <p style="text-align: left;" >Welcome, <strong>{{ session.username }}</strong></p>
+          <a href="/logout" class="btn btn-outline-danger btn-sm">Logout</a>
+          <a href="/profile" class="btn btn-outline-info btn-sm">Profile</a>
+        {% else %}
+          <a href="/login" class="btn btn-outline-primary">Login / Register</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card p-3 mb-4">
+        <h4>Live Sensor Readings</h4>
+        <p><strong>Temperature:</strong> <span id="temp">{{ data.temp }}</span> °C</p>
+        <p><strong>Humidity:</strong> <span id="hum">{{ data.hum }}</span>%</p>
+        <p><strong>Water:</strong> <span id="water">{{ data.water }}</span> mm</p>
+        <p><strong>Soil:</strong> <span id="soil">{{ data.soil }}</span>%</p>
+        <hr>
+        <p><button onclick="toggleFan()" class="btn btn-outline-primary me-2">Toggle Fan</button> Fan is <strong><span id="fanStatus">OFF</span></strong></p>
+        <p><button onclick="toggleHeater()" class="btn btn-outline-danger me-2">Toggle Heater</button> Heater is <strong><span id="heaterStatus">OFF</span></strong></p>
+        <p><button onclick="toggleSoil()" class="btn btn-outline-success me-2">Toggle Soil Sensors</button> Soil Sensors are <strong><span id="soilStatus">OFF</span></strong></p>
+        <hr>
+        <h5>Adjust Constraints</h5>
+        <form onsubmit="updateConstraints(event)">
+          <div class="row">
+            <div class="col">
+              <input type="number" id="tempMin" class="form-control" placeholder="Min Temp" value="10">
+            </div>
+            <div class="col">
+              <input type="number" id="tempMax" class="form-control" placeholder="Max Temp" value="40">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-dark mt-2">Update</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-md-6">
+      <div class="card p-3 mb-4">
+        <h4>Weather Warnings</h4>
+        <div id="weather-warnings" class="text-danger">No Warnings</div>
+        <hr>
+        <h5>7-Day Forecast</h5>
+        <div id="forecast-daily">No Data</div>
+      </div>
+
+      <div class="card p-3">
+        <h5>Local Weather for {{ location }}</h5>
+        <div id="weather-now">
+          <p><strong>Condition:</strong> <span id="condition"></span></p>
+          <p><strong>Temperature:</strong> <span id="weathertemp"></span>°C</p>
+          <p><strong>Feels Like:</strong> <span id="feels_like"></span>°C</p>
+          <p><strong>Humidity:</strong> <span id="humidity"></span>%</p>
+          <p><strong>Wind:</strong> <span id="wind"></span> km/h</p>
+          <p><strong>UV Index:</strong> <span id="uv"></span></p>
+          <p><strong>Sunrise:</strong> <span id="sunrise"></span> | <strong>Sunset:</strong> <span id="sunset"></span></p>
+        </div>
+        <hr>
+        <h5>24-Hour Forecast</h5>
+        <canvas id="hourlyChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+	function toggleFan() {
+      fetch("/toggleFan").then(res => res.text()).then(data => {
+        document.getElementById("fanStatus").innerText = data;
+      });
+    }
+	
+	function toggleHeater() {
+      fetch("/toggleHeater").then(res => res.text()).then(data => {
+        document.getElementById("heaterStatus").innerText = data;
+      });
+    }
+	
+	function toggleSoil() {
+      fetch("/toggleSoil").then(res => res.text()).then(data => {
+        document.getElementById("soilStatus").innerText = data;
+      });
+    }
+	
+	function updateConstraints(event) {
+      event.preventDefault();
+      const min = document.getElementById("tempMin").value;
+      const max = document.getElementById("tempMax").value;
+      fetch(`/set-constraints?min=${min}&max=${max}`)
+        .then(res => res.text())
+        .then(alert);
+    }
+	
+    function updateLiveData() {
+        fetch('/data')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('temp').innerText = data.temp;
+                document.getElementById('hum').innerText = data.hum;
+                document.getElementById('water').innerText = data.water;
+                document.getElementById('soil').innerText = data.soil;
+            });
+    }
+
+    setInterval(updateLiveData, 5000); // Update every 5 seconds
+	
+const API_KEY = 'd8272555d1f53c7617f15d542cf1b498'; //KEY
+const locationInput = {{ location | tojson | safe }};
+
+window.onload = () => {
+  if (locationInput) {
+    getCoordinates(locationInput)
+      .then(coords => fetchWeather(coords.lat, coords.lon))
+      .catch(err => console.error("Geocoding failed:", err));
+  }
+};
+
+async function getCoordinates(location) {
+  const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${API_KEY}`);
+  const data = await res.json();
+  if (data.length === 0) throw new Error("Invalid location");
+  return { lat: data[0].lat, lon: data[0].lon };
+}
+
+async function fetchWeather(lat, lon) {
+  try {
+    const res = await fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&appid=${API_KEY}`);
+    const data = await res.json();
+	console.log("OpenWeather data: ",data);
+	renderHourlyChart(data.hourly);
+
+    updateNow(data.current);
+    updateForecastDaily(data.daily);
+    updateAlerts(data.alerts || []);
+  } catch (err) {
+    console.error("Weather fetch error:", err);
+  }
+}
+
+function updateNow(current) {
+  document.getElementById("condition").innerText = current.weather[0].description;
+  document.getElementById("weathertemp").innerText = current.temp;
+  document.getElementById("feels_like").innerText = current.feels_like;
+  document.getElementById("humidity").innerText = current.humidity;
+  document.getElementById("wind").innerText = (current.wind_speed * 3.6).toFixed(1); // m/s → km/h
+  document.getElementById("uv").innerText = current.uvi;
+  document.getElementById("sunrise").innerText = new Date(current.sunrise * 1000).toLocaleTimeString();
+  document.getElementById("sunset").innerText = new Date(current.sunset * 1000).toLocaleTimeString();
+}
+
+
+
+function updateForecastDaily(daily) {
+  let html = '<ul>';  // Start unordered list
+  daily.forEach(day => {
+    const date = new Date(day.dt * 1000);
+    const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+    html += `<li>${weekday}: ${day.temp.min}–${day.temp.max}°C, ${day.weather[0].main}</li>`;
+  });
+  html += '</ul>';  // Close unordered list
+  document.getElementById("forecast-daily").innerHTML = html;
+  console.log("Daily forecast:", daily);
+}
+
+function updateAlerts(alerts) {
+  const box = document.getElementById("weather-warnings");
+  if (alerts.length === 0) {
+    box.innerHTML = "No Warnings";
+    return;
+  }
+
+  let html = "";
+  alerts.forEach(alert => {
+    const isRelevant = alert.event.toLowerCase().includes("frost") || alert.event.toLowerCase().includes("heat");
+    if (isRelevant) {
+      html += `
+        <div style="border:1px solid red;padding:5px;margin-bottom:5px;">
+          <strong>${alert.event}</strong><br>
+          ${alert.description}<br>
+          <em>${new Date(alert.start * 1000).toLocaleString()} → ${new Date(alert.end * 1000).toLocaleString()}</em>
+        </div>
+      `;
+    }
+  });
+
+  box.innerHTML = html || "No frost or heat warnings.";
+}
+
+window.onload = () => {
+  console.log("Location input from session:", locationInput);
+  if (locationInput) {
+    getCoordinates(locationInput)
+      .then(coords => fetchWeather(coords.lat, coords.lon))
+      .catch(err => console.error("Geocoding failed:", err));
+  }
+};
+
+function renderHourlyChart(hourlyData) {
+  const ctx = document.getElementById('hourlyChart').getContext('2d');
+  
+  const labels = hourlyData.slice(0, 24).map(h => {
+    const date = new Date(h.dt * 1000);
+    return `${date.getHours()}:00`;
+  });
+
+  const temps = hourlyData.slice(0, 24).map(h => h.temp);
+  const humidity = hourlyData.slice(0, 24).map(h => h.humidity);
+  const rain = hourlyData.slice(0, 24).map(h => h.rain ? h.rain['1h'] || 0 : 0);  // mm in last hour
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'line',
+          label: 'Temp (°C)',
+          data: temps,
+          borderColor: 'red',
+          backgroundColor: 'rgba(255,0,0,0.1)',
+          yAxisID: 'y',
+          tension: 0.3
+        },
+        {
+          type: 'line',
+          label: 'Humidity (%)',
+          data: humidity,
+          borderColor: 'blue',
+          backgroundColor: 'rgba(0,0,255,0.1)',
+          yAxisID: 'y',
+          tension: 0.3
+        },
+        {
+          type: 'bar',
+          label: 'Rainfall (mm)',
+          data: rain,
+          backgroundColor: 'rgba(0, 150, 136, 0.6)',
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      stacked: false,
+      scales: {
+        y: {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'Temp/Humidity' },
+          beginAtZero: false
+        },
+        y1: {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'Rainfall (mm)' },
+          beginAtZero: true,
+          grid: {
+            drawOnChartArea: false
+          }
+        }
+      }
+    }
+  });
+}
+
+
+	
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h2>Profile Settings</h2>
+
+<form method="POST">
+  <label for="location">Default Location:</label>
+  <input type="text" name="location" value="{{ location }}">
+  <button type="submit">Update Location</button>
+</form>
+
+<hr>
+
+<form method="POST" action="/select-device" onsubmit="return showDeviceInfo()">
+  <select name="device_ip" id="device_ip_select">
+    {% for d in devices %}
+      <option value="http://{{ d.ip }}" data-mac="{{ d.mac }}">
+        {{ d.nickname or d.mac }}
+      </option>
+    {% endfor %}
+  </select>
+  <button type="submit">Set Active Device</button>
+</form>
+
+<script>
+  function showDeviceInfo() {
+    const select = document.getElementById('device_ip_select');
+    const selectedOption = select.options[select.selectedIndex];
+    const ip = selectedOption.value;
+    const mac = selectedOption.getAttribute('data-mac');
+    alert(`Selected Device:\nIP: ${ip}\nMAC: ${mac}`);
+    return true; // allow form to submit
+  }
+  
+  setInterval(() => {
+    fetch("/check-device-ip")
+        .then(res => res.json())
+        .then(data => {
+            if (data.has_ip) {
+                location.reload();
+            }
+        });
+	}, 3000); // check every 3 seconds
+</script>
+
+<hr>
+
+<h3>Register New Device</h3>
+<form method="POST">
+  <label for="mac">Device MAC Address:</label>
+  <input type="text" name="mac" required>
+  <label for="nickname">Nickname (optional):</label>
+  <input type="text" name="nickname">
+  <button type="submit">Register Device</button>
+</form>
+
+<hr>
+
+<form action="{{ url_for('remove_device') }}" method="post">
+  <select name="mac">
+    {% for device in devices %}
+      <option value="{{ device['mac'] }}">{{ device['nickname'] }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Remove</button>
+</form>
+
+<script>
+  function showDeviceInfo() {
+    const select = document.getElementById('device_ip_select');
+    const selectedOption = select.options[select.selectedIndex];
+    const ip = selectedOption.value;
+    const mac = selectedOption.getAttribute('data-mac');
+    alert(`Selected Device:\nIP: ${ip}\nMAC: ${mac}`);
+    return true; // allow form to submit
+  }
+</script>
+
+{% endblock %}
