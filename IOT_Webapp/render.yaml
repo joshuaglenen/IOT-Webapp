@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: greenhouse-monitor
+    env: python
+    buildCommand: ""
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: OPENWEATHER_API_KEY
+        sync: false

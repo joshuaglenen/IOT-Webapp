@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Trends{% endblock %}
+{% block content %}
+<head>
+    <title>Trends</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+</head>
+<body>
+    <h2>Temperature and Humidity Trends</h2>
+    <canvas id="trendsChart" width="800" height="400"></canvas>
+
+    <script>
+        const timestamps = {{ timestamps | tojson }};
+        const temperatures = {{ temperatures | tojson }};
+        const humidities = {{ humidities | tojson }};
+
+        const ctx = document.getElementById('trendsChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: timestamps,
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: temperatures,
+                        borderColor: 'red',
+                        fill: false
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        data: humidities,
+                        borderColor: 'blue',
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'minute'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+{% endblock %}
