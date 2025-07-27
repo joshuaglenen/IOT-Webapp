@@ -2,7 +2,7 @@ services:
   - type: web
     name: greenhouse-monitor
     env: python
-    buildCommand: ""
+    buildCommand: pip install -r IOT_Webapp/requirements.txt
     startCommand: gunicorn app:app
     envVars:
       - key: FLASK_ENV
