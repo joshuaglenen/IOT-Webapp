@@ -1,8 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Info{% endblock %}
-{% block content %}
-<h2>Info</h2>
-<body>
-<p>This system is a greenhouse monitoring and control solution consisting of a Wi-Fi–enabled embedded device and a connected web application. The device, built on the ESP32 platform, collects real-time environmental data such as temperature, humidity, and soil moisture, and can actuate outputs like a heater, fan, and water system. It uses WiFiManager to connect to local networks and automatically registers itself with the web app by sending its MAC address and IP. The Python Flask web application provides a user dashboard for live readings, local weather, frost and heat warnings, and personalized device management. Users can register and assign multiple devices, set a default location, monitor sensor values remotely, and control outputs through a secure and intuitive interface. The system supports long-term data analysis via ThingSpeak integration and is designed for scalability across multiple devices and user profiles.</p>
-</body>
-{% endblock %}
