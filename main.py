@@ -7,7 +7,7 @@ import os
 
 app = Flask(__name__)
 app.secret_key = 'yoursecret'  # required for session
-openWeatherAPIKEY = os.getenv('OPENWEATHER_API_KEY')
+openWeatherAPIKEY =  os.getenv('OPENWEATHER_API_KEY')
 DATABASE = 'users.db'
 
 ############################################################################ DB
@@ -53,6 +53,7 @@ def get_db():
         db.row_factory = sqlite3.Row
     return db
 
+
 ############################################################################ Pages
 @app.route('/')
 def home():
@@ -60,9 +61,10 @@ def home():
         flash("Please log in", "warning")
         return redirect('/login')
 
-    mac = session.get('esp_mac')  # or whatever you store when selecting a device
+    mac = session.get('esp_mac')
     location = session.get('location', 'Halifax')
 
+    print(mac)
     if not mac:
         flash("No device selected.", "warning")
         return render_template("home.html", data={"temp": "No device", "hum": "No device", "water": "No device", "soil": "No device"}, location=location)
@@ -88,6 +90,38 @@ def home():
         data = {"temp": "No data", "hum": "No data", "water": "No data", "soil": "No data"}
 
     return render_template("home.html", data=data, location=location)
+
+@app.route("/get_weather")
+def get_weather():
+    location = request.args.get("location")
+    if not location:
+        return jsonify({"error": "No location provided"}), 400
+
+    # Step 1: Geocode
+    geo_url = f"https://api.openweathermap.org/geo/1.0/direct"
+    geo_res = requests.get(geo_url, params={
+        "q": location,
+        "limit": 1,
+        "appid": openWeatherAPIKEY
+    })
+    geo_data = geo_res.json()
+    if not geo_data:
+        return jsonify({"error": "Invalid location"}), 404
+
+    lat = geo_data[0]["lat"]
+    lon = geo_data[0]["lon"]
+
+    # Step 2: Weather
+    weather_url = "https://api.openweathermap.org/data/3.0/onecall"
+    weather_res = requests.get(weather_url, params={
+        "lat": lat,
+        "lon": lon,
+        "units": "metric",
+        "appid": openWeatherAPIKEY
+    })
+
+    return jsonify(weather_res.json())
+
 
 @app.route("/trends")
 def trends():
@@ -178,7 +212,7 @@ def profile():
     if 'user_id' not in session:
         return redirect('/login')
     user_id = session['user_id']
-    user_ip  = request.remote_addr
+    user_ip = request.remote_addr
     conn = sqlite3.connect('users.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -202,6 +236,7 @@ def profile():
 
 
     if request.method == 'POST':
+        print("reg:", request.form['mac'], user_id)
         if 'mac' in request.form:
             mac = request.form['mac']
             cursor.execute("SELECT * FROM devices WHERE user_id = ? AND mac = ?", (user_id, mac))
@@ -209,9 +244,11 @@ def profile():
             if existing:
                 flash("Device with this MAC already registered.", "warning")
             else:
+                session['esp_mac'] = mac
                 nickname = request.form.get('nickname', '')
-                cursor.execute("INSERT INTO devices (user_id, mac, nickname, ip) VALUES (?, ?, ?, NULL)",
-                               (user_id, mac, nickname))
+                ip = request.remote_addr
+                cursor.execute("INSERT INTO devices (user_id, mac, nickname, ip) VALUES (?, ?, ?, ?)",
+                               (user_id, mac, nickname, ip))
         if 'location' in request.form:
             location = request.form['location']
             session['location'] = location
@@ -223,7 +260,7 @@ def profile():
     cursor.execute("SELECT location FROM users WHERE id = ?", (user_id,))
     location = cursor.fetchone()['location']
 
-    cursor.execute("SELECT * FROM devices WHERE user_id = ? AND ip IS NOT NULL", (user_id,))
+    cursor.execute("SELECT * FROM devices WHERE user_id = ?", (user_id,))
     devices = cursor.fetchall()
 
     conn.close()
@@ -234,6 +271,9 @@ def profile():
 @app.route('/select-device', methods=['POST'])
 def select_device():
     session['esp_ip'] = request.form.get('device_ip')
+    session['esp_mac'] = request.form.get('device_mac')
+    print(session['esp_ip'])
+    print(session['esp_mac'])
     flash("Active device set.", "info")
     return redirect('/profile')
 
@@ -277,7 +317,7 @@ def set_location():
 
 @app.route('/set-ip', methods=['POST'])
 def set_ip():
-    ip = request.form['esp_ip']
+    ip = request.remote_addr
     session['esp_ip'] = ip
     return redirect('/')
 
@@ -310,6 +350,30 @@ def toggleSoil():
         return res.text
     except:
         return "ERROR", 503
+
+@app.route("/data")
+def get_data():
+    mac = session.get("esp_mac")
+    if not mac:
+        return jsonify({"error": "No device selected"}), 400
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM sensor_data WHERE mac = ?
+            ORDER BY timestamp DESC LIMIT 1
+        """, (mac,))
+        row = cursor.fetchone()
+
+    if row:
+        return jsonify({
+            "temp": row["temperature"],
+            "hum": row["humidity"],
+            "water": row["water_level"],
+            "soil": row["soil"]
+        })
+    else:
+        return jsonify({"error": "No data found"}), 404
 
 @app.route('/submit-data', methods=['POST'])
 def submit_data():
