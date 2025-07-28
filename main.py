@@ -7,7 +7,7 @@ import os
 
 app = Flask(__name__)
 app.secret_key = 'yoursecret'  # required for session
-openWeatherAPIKEY =  os.getenv('OPENWEATHER_API_KEY')
+openWeatherAPIKEY = os.getenv('OPENWEATHER_API_KEY')
 DATABASE = 'users.db'
 
 ############################################################################ DB
