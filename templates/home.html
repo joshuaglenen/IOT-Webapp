@@ -124,28 +124,18 @@
 
     setInterval(updateLiveData, 5000); // Update every 5 seconds
 	
-const API_KEY = 'd8272555d1f53c7617f15d542cf1b498'; //KEY
 const locationInput = {{ location | tojson | safe }};
 
 window.onload = () => {
   if (locationInput) {
-    getCoordinates(locationInput)
-      .then(coords => fetchWeather(coords.lat, coords.lon))
-      .catch(err => console.error("Geocoding failed:", err));
+    fetchWeather(locationInput)
   }
 };
 
-async function getCoordinates(location) {
-  const res = await fetch(`https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${API_KEY}`);
-  const data = await res.json();
-  if (data.length === 0) throw new Error("Invalid location");
-  return { lat: data[0].lat, lon: data[0].lon };
-}
-
-async function fetchWeather(lat, lon) {
+async function fetchWeather(location = "Halifax") {
   try {
-    const res = await fetch(`https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&units=metric&appid=${API_KEY}`);
-    const data = await res.json();
+	const res = await fetch(`/get_weather?location=${encodeURIComponent(location)}`);
+	const data = await res.json(); 
 	console.log("OpenWeather data: ",data);
 	renderHourlyChart(data.hourly);
 
@@ -206,14 +196,6 @@ function updateAlerts(alerts) {
   box.innerHTML = html || "No frost or heat warnings.";
 }
 
-window.onload = () => {
-  console.log("Location input from session:", locationInput);
-  if (locationInput) {
-    getCoordinates(locationInput)
-      .then(coords => fetchWeather(coords.lat, coords.lon))
-      .catch(err => console.error("Geocoding failed:", err));
-  }
-};
 
 function renderHourlyChart(hourlyData) {
   const ctx = document.getElementById('hourlyChart').getContext('2d');
