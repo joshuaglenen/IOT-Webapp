@@ -108,8 +108,11 @@ def get_weather():
     if not geo_data:
         return jsonify({"error": "Invalid location"}), 404
 
-    lat = geo_data[0]["lat"]
-    lon = geo_data[0]["lon"]
+    try:
+        lat = geo_data[0]["lat"]
+        lon = geo_data[0]["lon"]
+    except (IndexError, KeyError):
+        return jsonify({"error": "Invalid location or API response"}), 400
 
     # Step 2: Weather
     weather_url = "https://api.openweathermap.org/data/3.0/onecall"
