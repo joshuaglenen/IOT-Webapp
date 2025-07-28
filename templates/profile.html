@@ -11,24 +11,24 @@
 
 <hr>
 
-<form method="POST" action="/select-device" onsubmit="return showDeviceInfo()">
+<form method="POST" action="/select-device" onsubmit="return updateHiddenMac()">
   <select name="device_ip" id="device_ip_select">
     {% for d in devices %}
       <option value="{{ d.ip }}" data-mac="{{ d.mac }}">{{ d.nickname }}</option>
     {% endfor %}
   </select>
-  <input type="hidden" name="device_mac" id="device_mac_hidden">
+  <input type="hidden" name="device_mac" id="device_mac_hidden" />
   <button type="submit">Set Active Device</button>
 </form>
 
 <script>
-  function showDeviceInfo() {
-    const select = document.getElementById('device_ip_select');
-    const selectedOption = select.options[select.selectedIndex];
-    const mac = selectedOption.getAttribute('data-mac');
-    document.getElementById('device_mac_hidden').value = mac;
-    return true;
-  }
+function updateHiddenMac() {
+  const select = document.getElementById('device_ip_select');
+  const selectedOption = select.options[select.selectedIndex];
+  const mac = selectedOption.getAttribute('data-mac');
+  document.getElementById('device_mac_hidden').value = mac;
+  return true;
+}
 </script>
 
 <hr>
