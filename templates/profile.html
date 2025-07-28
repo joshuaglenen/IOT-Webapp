@@ -14,11 +14,10 @@
 <form method="POST" action="/select-device" onsubmit="return showDeviceInfo()">
   <select name="device_ip" id="device_ip_select">
     {% for d in devices %}
-      <option value="http://{{ d.ip }}" data-mac="{{ d.mac }}">
-        {{ d.nickname or d.mac }}
-      </option>
+      <option value="{{ d.ip }}" data-mac="{{ d.mac }}">{{ d.nickname }}</option>
     {% endfor %}
   </select>
+  <input type="hidden" name="device_mac" id="device_mac_hidden">
   <button type="submit">Set Active Device</button>
 </form>
 
@@ -26,21 +25,10 @@
   function showDeviceInfo() {
     const select = document.getElementById('device_ip_select');
     const selectedOption = select.options[select.selectedIndex];
-    const ip = selectedOption.value;
     const mac = selectedOption.getAttribute('data-mac');
-    alert(`Selected Device:\nIP: ${ip}\nMAC: ${mac}`);
-    return true; // allow form to submit
+    document.getElementById('device_mac_hidden').value = mac;
+    return true;
   }
-  
-  setInterval(() => {
-    fetch("/check-device-ip")
-        .then(res => res.json())
-        .then(data => {
-            if (data.has_ip) {
-                location.reload();
-            }
-        });
-	}, 3000); // check every 3 seconds
 </script>
 
 <hr>
