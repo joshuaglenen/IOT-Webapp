@@ -30,6 +30,9 @@ def init_db():
                 nickname TEXT,
                 ip TEXT,
                 location TEXT,
+                fan_status TEXT DEFAULT 'OFF',
+                heater_status TEXT DEFAULT 'OFF',
+                soil_status TEXT DEFAULT 'OFF',
                 FOREIGN KEY(user_id) REFERENCES users(id)
             );
         ''')
@@ -44,6 +47,16 @@ def init_db():
                 soil REAL
             );
         ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS commands (
+                mac TEXT PRIMARY KEY,
+                toggle_fan BOOLEAN DEFAULT 0,
+                toggle_heater BOOLEAN DEFAULT 0,
+                toggle_soil BOOLEAN DEFAULT 0,
+                min_temp INTEGER,
+                max_temp INTEGER
+            );
+       ''')
         conn.commit()
 
 def get_db():
@@ -57,14 +70,36 @@ def get_db():
 ############################################################################ Pages
 @app.route('/')
 def home():
-    if 'user_id' not in session:
+    user_id = session.get('user_id')
+
+    if not user_id:
         flash("Please log in", "warning")
         return redirect('/login')
 
-    mac = session.get('esp_mac')
-    location = session.get('location', 'Halifax')
+    # Set session values from DB if they aren't already set
+    if 'esp_mac' not in session or 'location' not in session:
+        with get_db() as conn:
+            cursor = conn.cursor()
 
-    print(mac)
+            # Get first device MAC if not already set
+            if 'esp_mac' not in session:
+                cursor.execute("SELECT mac FROM devices WHERE user_id = ? ORDER BY id ASC LIMIT 1", (user_id,))
+                row = cursor.fetchone()
+                if row:
+                    session['esp_mac'] = row['mac']
+                    print("Auto-set MAC from DB:", row['mac'])
+
+            # Get saved location if not already set
+            if 'location' not in session:
+                cursor.execute("SELECT location FROM users WHERE id = ?", (user_id,))
+                row = cursor.fetchone()
+                if row and row['location']:
+                    session['location'] = row['location']
+                    print("Auto-set location from DB:", row['location'])
+
+    mac = session.get('esp_mac')
+    location = session.get('location', 'Halifax')  # fallback to Halifax
+
     if not mac:
         flash("No device selected.", "warning")
         return render_template("home.html", data={"temp": "No device", "hum": "No device", "water": "No device", "soil": "No device"}, location=location)
@@ -89,7 +124,11 @@ def home():
     else:
         data = {"temp": "No data", "hum": "No data", "water": "No data", "soil": "No data"}
 
-    return render_template("home.html", data=data, location=location)
+    try:
+        return render_template("home.html", data=data, location=location)
+    except Exception as e:
+        print("Error rendering home.html:", e)
+        return "Template rendering failed", 500
 
 @app.route("/get_weather")
 def get_weather():
@@ -212,10 +251,12 @@ def logout():
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
-    if 'user_id' not in session:
-        return redirect('/login')
+    print("POST data:", request.form)
+
     user_id = session['user_id']
     user_ip = request.remote_addr
+    if 'user_id' not in session:
+        return redirect('/login')
     conn = sqlite3.connect('users.db')
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -239,7 +280,6 @@ def profile():
 
 
     if request.method == 'POST':
-        print("reg:", request.form['mac'], user_id)
         if 'mac' in request.form:
             mac = request.form['mac']
             cursor.execute("SELECT * FROM devices WHERE user_id = ? AND mac = ?", (user_id, mac))
@@ -275,8 +315,8 @@ def profile():
 def select_device():
     session['esp_ip'] = request.form.get('device_ip')
     session['esp_mac'] = request.form.get('device_mac')
-    print(session['esp_ip'])
-    print(session['esp_mac'])
+    print("Selected device IP:", session['esp_ip'])
+    print("Selected device MAC:", session['esp_mac'])
     flash("Active device set.", "info")
     return redirect('/profile')
 
@@ -326,57 +366,80 @@ def set_ip():
 
 ############################################################################ Device Communication
 
-@app.route('/toggleHeater')
-def toggleHeater():
-    try:
-        esp_ip = session.get('esp_ip')
-        res = requests.get(f"{esp_ip}/toggleHeater", timeout=5)
-        return res.text
-    except:
-        return "ERROR", 503
-
-@app.route('/toggleFan')
-def toggleFan():
-    try:
-        esp_ip = session.get('esp_ip')
-        res = requests.get(f"{esp_ip}/toggleFan", timeout=5)
-        return res.text  # return "ON" or "OFF"
-    except:
-        return "ERROR", 503
-
-
-@app.route('/toggleSoil')
-def toggleSoil():
-    try:
-        esp_ip = session.get('esp_ip')
-        res = requests.get(f"{esp_ip}/toggleSoil", timeout=5)
-        return res.text
-    except:
-        return "ERROR", 503
-
-@app.route("/data")
-def get_data():
-    mac = session.get("esp_mac")
+@app.route('/set-command', methods=['POST'])
+def set_command():
+    mac = session.get('esp_mac')
     if not mac:
-        return jsonify({"error": "No device selected"}), 400
+        return "No active device selected", 400
+
+    cmd_type = request.form.get('cmd')
+    temp_min = request.form.get('tempMin')
+    temp_max = request.form.get('tempMax')
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM sensor_data WHERE mac = ?
-            ORDER BY timestamp DESC LIMIT 1
-        """, (mac,))
-        row = cursor.fetchone()
 
-    if row:
+        # Initialize row in commands table if not exists
+        cursor.execute("INSERT OR IGNORE INTO commands (mac) VALUES (?)", (mac,))
+
+        if cmd_type == "toggle_fan":
+            # Queue command
+            cursor.execute("UPDATE commands SET toggle_fan = 1 WHERE mac = ?", (mac,))
+            # Flip status
+            cursor.execute("SELECT fan_status FROM devices WHERE mac = ?", (mac,))
+            current = cursor.fetchone()[0]
+            new_status = "OFF" if current == "ON" else "ON"
+            cursor.execute("UPDATE devices SET fan_status = ? WHERE mac = ?", (new_status, mac,))
+
+        elif cmd_type == "toggle_heater":
+            cursor.execute("UPDATE commands SET toggle_heater = 1 WHERE mac = ?", (mac,))
+            cursor.execute("SELECT heater_status FROM devices WHERE mac = ?", (mac,))
+            current = cursor.fetchone()[0]
+            new_status = "OFF" if current == "ON" else "ON"
+            cursor.execute("UPDATE devices SET heater_status = ? WHERE mac = ?", (new_status, mac,))
+
+        elif cmd_type == "toggle_soil":
+            cursor.execute("UPDATE commands SET toggle_soil = 1 WHERE mac = ?", (mac,))
+            cursor.execute("SELECT soil_status FROM devices WHERE mac = ?", (mac,))
+            current = cursor.fetchone()[0]
+            new_status = "OFF" if current == "ON" else "ON"
+            cursor.execute("UPDATE devices SET soil_status = ? WHERE mac = ?", (new_status, mac,))
+
+        elif cmd_type == "set_constraints":
+            cursor.execute("UPDATE commands SET min_temp = ?, max_temp = ? WHERE mac = ?", (temp_min, temp_max, mac))
+
+        conn.commit()
+
+    return "Command queued", 200
+
+
+@app.route('/data')
+def get_data():
+    mac = session.get('esp_mac')
+    if not mac:
+        return jsonify({"temp": "No device", "hum": "No device", "water": "No device", "soil": "No device"})
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sensor_data WHERE mac = ? ORDER BY timestamp DESC LIMIT 1", (mac,))
+        sensor_row = cursor.fetchone()
+
+        cursor.execute("SELECT fan_status, heater_status, soil_status FROM devices WHERE mac = ?", (mac,))
+        status_row = cursor.fetchone()
+
+    if sensor_row:
         return jsonify({
-            "temp": row["temperature"],
-            "hum": row["humidity"],
-            "water": row["water_level"],
-            "soil": row["soil"]
+            "temp": sensor_row['temperature'],
+            "hum": sensor_row['humidity'],
+            "water": sensor_row['water_level'],
+            "soil": sensor_row['soil'],
+            "fan": status_row['fan_status'],
+            "heater": status_row['heater_status'],
+            "soilStatus": status_row['soil_status']
         })
     else:
-        return jsonify({"error": "No data found"}), 404
+        return jsonify({"temp": "No data", "hum": "No data", "water": "No data", "soil": "No data", "fan": "No data", "heater": "No data", "soilStatus": "No data"})
+
 
 @app.route('/submit-data', methods=['POST'])
 def submit_data():
@@ -390,6 +453,7 @@ def submit_data():
     if not mac:
         return jsonify({'error': 'MAC address required'}), 400
 
+    #get most recent data
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -398,19 +462,35 @@ def submit_data():
         """, (mac, temp, hum, water, soil))
         conn.commit()
 
-    return jsonify({'status': 'Data stored'})
+        #send back commands
+        cursor.execute("SELECT * FROM commands WHERE mac = ?", (mac,))
+        cmd_row = cursor.fetchone()
+
+        if cmd_row:
+            commands = {
+                "toggle_fan": bool(cmd_row["toggle_fan"]),
+                "toggle_heater": bool(cmd_row["toggle_heater"]),
+                "toggle_soil": bool(cmd_row["toggle_soil"]),
+                "update_constraints": {
+                    "min_temp": cmd_row["min_temp"],
+                    "max_temp": cmd_row["max_temp"]
+                }
+            }
+
+            # Clear the commands after sending
+            cursor.execute("""
+                       UPDATE commands
+                       SET toggle_fan = 0, toggle_heater = 0, toggle_soil = 0,
+                           min_temp = NULL, max_temp = NULL
+                       WHERE mac = ?
+                   """, (mac,))
+
+            conn.commit()
+        else:
+            commands = {}
+    return jsonify(commands)
 
 
-@app.route('/set-constraints', methods=['POST'])
-def set_constraints():
-    temp_min = request.form['tempMin']
-    temp_max = request.form['tempMax']
-    try:
-        esp_ip = session.get('esp_ip')
-        requests.get(f"{esp_ip}/set-constraints?min={temp_min}&max={temp_max}", timeout=5)
-    except:
-        pass
-    return redirect('/')
 
 ############################################################################ Main
 
