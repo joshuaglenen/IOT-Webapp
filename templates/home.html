@@ -33,8 +33,10 @@
         <h4>Live Sensor Readings</h4>
         <p><strong>Temperature:</strong> <span id="temp">{{ data.temp }}</span> °C</p>
         <p><strong>Humidity:</strong> <span id="hum">{{ data.hum }}</span>%</p>
+		<div id="soilSection">
         <p><strong>Water:</strong> <span id="water">{{ data.water }}</span> mm</p>
         <p><strong>Soil:</strong> <span id="soil">{{ data.soil }}</span>%</p>
+		</div>
         <hr>
         <p><button onclick="toggleFan()" class="btn btn-outline-primary me-2">Toggle Fan</button> Fan is <strong><span id="fanStatus">OFF</span></strong></p>
         <p><button onclick="toggleHeater()" class="btn btn-outline-danger me-2">Toggle Heater</button> Heater is <strong><span id="heaterStatus">OFF</span></strong></p>
@@ -85,42 +87,67 @@
 
 <script>
 	function toggleFan() {
-      fetch("/toggleFan").then(res => res.text()).then(data => {
-        document.getElementById("fanStatus").innerText = data;
-      });
-    }
-	
+		fetch("/set-command", {
+			method: "POST",
+			body: new URLSearchParams({ cmd: "toggle_fan" })
+		}).then(res => res.text()).then(alert);
+	}
+
 	function toggleHeater() {
-      fetch("/toggleHeater").then(res => res.text()).then(data => {
-        document.getElementById("heaterStatus").innerText = data;
-      });
-    }
-	
+		fetch("/set-command", {
+			method: "POST",
+			body: new URLSearchParams({ cmd: "toggle_heater" })
+		}).then(res => res.text()).then(alert);
+	}
+
 	function toggleSoil() {
-      fetch("/toggleSoil").then(res => res.text()).then(data => {
-        document.getElementById("soilStatus").innerText = data;
-      });
-    }
-	
+		fetch("/set-command", {
+			method: "POST",
+			body: new URLSearchParams({ cmd: "toggle_soil" })
+		}).then(res => res.text()).then(alert);
+	}
+
 	function updateConstraints(event) {
-      event.preventDefault();
-      const min = document.getElementById("tempMin").value;
-      const max = document.getElementById("tempMax").value;
-      fetch(`/set-constraints?min=${min}&max=${max}`)
-        .then(res => res.text())
-        .then(alert);
-    }
+		event.preventDefault();
+		const min = document.getElementById("tempMin").value;
+		const max = document.getElementById("tempMax").value;
+		fetch("/set-command", {
+			method: "POST",
+			body: new URLSearchParams({
+				cmd: "set_constraints",
+				tempMin: min,
+				tempMax: max
+			})
+		}).then(res => res.text()).then(alert);
+	}
+
 	
     function updateLiveData() {
-        fetch('/data')
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('temp').innerText = data.temp;
-                document.getElementById('hum').innerText = data.hum;
-                document.getElementById('water').innerText = data.water;
-                document.getElementById('soil').innerText = data.soil;
-            });
-    }
+    fetch('/data')
+        .then(res => {
+            if (!res.ok) throw new Error("Failed to fetch");
+            return res.json();
+        })
+        .then(data => {
+			document.getElementById('temp').innerText = data.temp ?? "—";
+			document.getElementById('hum').innerText = data.hum ?? "—";
+			document.getElementById('water').innerText = data.water ?? "—";
+			document.getElementById('soil').innerText = data.soil ?? "—";
+			document.getElementById('fanStatus').innerText = data.fan;
+			  document.getElementById('heaterStatus').innerText = data.heater;
+			  document.getElementById('soilStatus').innerText = data.soilStatus;
+			  const soilSection = document.getElementById('soilSection');
+			  if (data.soilStatus === "ON") {
+				soilSection.style.display = 'block';
+			  } else {
+				soilSection.style.display = 'none';
+			  }
+        })
+        .catch(err => {
+            console.error("Live data fetch failed:", err);
+        });
+}
+
 
     setInterval(updateLiveData, 5000); // Update every 5 seconds
 	
