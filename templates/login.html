@@ -2,6 +2,12 @@
 {% extends "base.html" %}
 {% block title %}Login{% endblock %}
 {% block content %}
+
+<div class="container-fluid">
+<div class="row mb-4">
+<div class="col-md-6">
+<div class="card p-3">
+
 <h2>Login / Register</h2>
 
 <form method="post">
@@ -11,9 +17,12 @@
     <button type="submit" name="action" value="login">Login</button>
     <button type="submit" name="action" value="register">Register</button>
 </form>
+</div>
+</div>
+</div>
+</div>
 
 {% for message in get_flashed_messages(with_categories=true) %}
     <p style="color: {{ 'red' if message[0]=='danger' else 'green' }}">{{ message[1] }}</p>
 {% endfor %}
 {% endblock %}
-
